@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Game win-probability predictor: pulls today's MLB lineups + probable starters, runs Monte Carlo PA-by-PA simulation using the matchup model.">
+<meta name="color-scheme" content="light dark">
+<meta http-equiv="Content-Security-Policy" content="
+  default-src 'self';
+  script-src 'self';
+  style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+  font-src 'self' https://fonts.gstatic.com;
+  img-src 'self' data:;
+  connect-src 'self';
+  frame-ancestors 'none';
+  base-uri 'self';
+  form-action 'none';
+">
+<title>Win Probability — MLB Slate</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preload" as="fetch" href="data/today.json" type="application/json" crossorigin="anonymous">
+<link rel="preload" as="fetch" href="data/pitchers.json" type="application/json" crossorigin="anonymous">
+<link rel="preload" as="fetch" href="data/batters.json" type="application/json" crossorigin="anonymous">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css">
+<script src="js/matchup-model.js" defer></script>
+<script src="js/simulator.js" defer></script>
+<script src="js/data-loader.js" defer></script>
+<script src="js/ui.js" defer></script>
+</head>
+<body>
+  <header class="hdr">
+    <div class="hdr-inner">
+      <h1>Win Probability</h1>
+      <span class="hdr-sub">Monte Carlo simulation · 2000 games per matchup</span>
+      <span class="meta-line" id="meta-line"></span>
+    </div>
+  </header>
+
+  <main id="slate">
+    <div class="hint">Loading slate&hellip;</div>
+  </main>
+
+  <footer class="ftr">
+    <div class="ftr-inner">
+      <span>Data: FanGraphs + MLB Stats API (schedule, probable pitchers, lineups when posted)</span>
+      <span>Model: per-PA log5 matchup → 2k-iteration MC sim</span>
+      <span><a href="https://github.com/jackmueller53-sys/game-win-probability" rel="noopener noreferrer">source</a></span>
+    </div>
+  </footer>
+</body>
+</html>

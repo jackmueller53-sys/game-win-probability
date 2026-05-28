@@ -1,0 +1,46 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - name: Stage publishable files
+        run: |
+          set -euo pipefail
+          mkdir -p _site
+          cp -r index.html css js _site/
+          mkdir -p _site/data
+          find data -maxdepth 1 -type f -name '*.json' -exec cp {} _site/data/ \;
+          du -sh _site
+      - name: Minify with esbuild
+        run: |
+          set -euo pipefail
+          for f in _site/js/*.js; do
+            npx --yes -p esbuild esbuild --minify --log-level=warning --allow-overwrite "$f" --outfile="$f"
+          done
+          for f in _site/css/*.css; do
+            npx --yes -p esbuild esbuild --minify --log-level=warning --allow-overwrite "$f" --outfile="$f"
+          done
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: '_site' }
+      - id: deployment
+        uses: actions/deploy-pages@v4
