@@ -1,5 +1,5 @@
 {
-  "fetchedAt": "2026-06-05T11:28:42.588Z",
+  "fetchedAt": "2026-06-05T16:28:18.285Z",
   "season": 2026,
   "date": "2026-06-05",
   "counts": {
@@ -9,5 +9,5 @@
     "stuffplus": 664
   },
   "errors": [],
-  "durationMs": 4080
+  "durationMs": 3900
 }
