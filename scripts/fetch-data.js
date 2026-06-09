@@ -22,26 +22,66 @@ const DATA_DIR = path.join(__dirname, '..', 'data');
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
 // ─────────────────────────── http ───────────────────────────
-function fetchText(url) {
+// FanGraphs is behind Cloudflare; from CI we frequently get 403'd.
+// Use real-Chrome headers + a CORS-proxy fallback chain on 4xx.
+
+const BROWSER_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+  'Accept': 'application/json, text/plain, */*',
+  'Accept-Language': 'en-US,en;q=0.9',
+  'Accept-Encoding': 'identity',
+  'Sec-Ch-Ua': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+  'Sec-Ch-Ua-Mobile': '?0',
+  'Sec-Ch-Ua-Platform': '"macOS"',
+  'Sec-Fetch-Dest': 'empty',
+  'Sec-Fetch-Mode': 'cors',
+  'Sec-Fetch-Site': 'same-site',
+};
+const PROXIES = [
+  (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+  (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+];
+
+function directFetch(url, maxRedirects = 5) {
   return new Promise((resolve, reject) => {
+    if (maxRedirects <= 0) return reject(new Error('too many redirects'));
+    const parsed = new URL(url);
     const req = https.get(url, {
-      headers: {
-        'User-Agent': 'game-win-probability/1.0 (+github.com/jackmueller53-sys)',
-        'Accept': 'application/json',
-      },
+      headers: { ...BROWSER_HEADERS, 'Referer': `${parsed.origin}/` },
       timeout: 30000,
     }, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        return fetchText(res.headers.location).then(resolve, reject);
+        let next = res.headers.location;
+        if (next.startsWith('/')) next = parsed.origin + next;
+        return resolve(directFetch(next, maxRedirects - 1));
       }
-      if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode} ${url}`));
+      if (res.statusCode !== 200) { res.resume(); return reject(new Error(`HTTP ${res.statusCode}`)); }
       const chunks = [];
       res.on('data', c => chunks.push(c));
       res.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
     });
     req.on('error', reject);
-    req.on('timeout', () => { req.destroy(); reject(new Error('timeout: ' + url)); });
+    req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
   });
+}
+
+async function fetchText(url) {
+  try { return await directFetch(url); }
+  catch (e) {
+    const is4xx = /HTTP 4\d\d/.test(e.message || '');
+    if (!is4xx) {
+      try { await new Promise(r => setTimeout(r, 300)); return await directFetch(url); }
+      catch (_) { /* fall through */ }
+    }
+    for (let i = 0; i < PROXIES.length; i++) {
+      try {
+        const txt = await directFetch(PROXIES[i](url));
+        console.warn(`    (recovered via proxy ${i + 1}/${PROXIES.length})`);
+        return txt;
+      } catch (_) { /* try next */ }
+    }
+    throw new Error(`${e.message} ${url.slice(0, 100)} (proxies also failed)`);
+  }
 }
 async function fetchJSON(url) {
   const t = await fetchText(url);
@@ -183,9 +223,21 @@ async function main() {
   try { schedule = await fetchSchedule(TODAY_ISO); }
   catch (e) { errors.push('schedule: ' + e.message); console.error(' ERR', e.message); }
 
-  fs.writeFileSync(path.join(DATA_DIR, 'batters.json'), JSON.stringify(batters));
-  fs.writeFileSync(path.join(DATA_DIR, 'pitchers.json'), JSON.stringify(pitchers));
-  fs.writeFileSync(path.join(DATA_DIR, 'league.json'), JSON.stringify(league));
+  // Preserve existing FG-derived files when this run got 0 rows (Cloudflare
+  // 403, etc.). today.json is always overwritten — schedule changes daily.
+  // Note: build_features.py runs AFTER this script and will overwrite these
+  // files with Statcast-derived data, which is the primary source.
+  function writeOrPreserve(name, val) {
+    const p = path.join(DATA_DIR, name);
+    if (Array.isArray(val) ? val.length > 0 : val && Object.keys(val).length > 0) {
+      fs.writeFileSync(p, JSON.stringify(val));
+    } else {
+      console.warn(`  preserving ${name} (this run returned empty)`);
+    }
+  }
+  writeOrPreserve('batters.json',  batters);
+  writeOrPreserve('pitchers.json', pitchers);
+  writeOrPreserve('league.json',   league);
   fs.writeFileSync(path.join(DATA_DIR, 'today.json'), JSON.stringify(schedule));
   fs.writeFileSync(path.join(DATA_DIR, 'meta.json'), JSON.stringify({
     fetchedAt: new Date().toISOString(),

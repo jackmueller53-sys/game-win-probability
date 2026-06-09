@@ -1,4 +1,7 @@
 node_modules/
 .DS_Store
 *.log
+data/*.tmp.json
 _site/
+backtest/__pycache__/
+scripts/__pycache__/

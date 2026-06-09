@@ -10,7 +10,7 @@
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
   // Build an index of player → row, lazily.
-  let _battersById, _pitchersById, _battersByTeam;
+  let _battersById, _pitchersById, _battersByTeam, _bullpenByTeam;
   function buildIndexes() {
     _battersById = new Map();
     _pitchersById = new Map();
@@ -24,6 +24,53 @@
     for (const p of window.MatchupData.pitchers) {
       if (p.id) _pitchersById.set(p.id, p);
     }
+    _bullpenByTeam = computeBullpenComposites(window.MatchupData.pitchers);
+  }
+
+  // IP-weighted composite of all pitchers with GS/G < 0.5 (relievers).
+  function computeBullpenComposites(pitchers) {
+    const byTeam = new Map();
+    for (const p of pitchers) {
+      const g = p.g || 0, gs = p.gs || 0;
+      if (g === 0 || (gs / g) >= 0.5) continue;
+      if ((p.ip || 0) < 5) continue;
+      if (!byTeam.has(p.team)) byTeam.set(p.team, []);
+      byTeam.get(p.team).push(p);
+    }
+    function w(rows, k) {
+      let n = 0, d = 0;
+      for (const r of rows) {
+        const v = r[k], wt = r.ip || 1;
+        if (v != null && isFinite(v)) { n += v * wt; d += wt; }
+      }
+      return d > 0 ? n / d : null;
+    }
+    const out = {};
+    for (const [team, rows] of byTeam) {
+      const ip = rows.reduce((s, r) => s + (r.ip || 0), 0);
+      out[team] = {
+        team, throws: 'R', ip, gs: 0, g: rows.length,
+        k_pct: w(rows, 'k_pct'), bb_pct: w(rows, 'bb_pct'),
+        babip: w(rows, 'babip'),
+        hr_per_pa: w(rows, 'hr_per_pa') || ((w(rows, 'hr_per_9') || 0) / 38),
+        era: w(rows, 'era'), fip: w(rows, 'fip'),
+        stuff_plus: 100, location_plus: 100,
+        name: team + ' bullpen', _composite: true,
+      };
+    }
+    return out;
+  }
+
+  function buildCtx(b, pit, homeTeam) {
+    const D = window.MatchupData;
+    return {
+      bat_split:   b   && D.bat_splits[b.id],
+      pit_split:   pit && D.pit_splits[pit.id],
+      bat_whiff:   b   && D.bat_whiff[b.id],
+      pit_arsenal: pit && D.pit_arsenal[pit.id],
+      park_factors: D.park_factors,
+      home_team:   homeTeam,
+    };
   }
 
   // Resolve a side's pitcher + lineup. If lineup IDs are missing or stale,
@@ -142,17 +189,18 @@
       <details class="matchup-detail">
         <summary>Matchup grid</summary>
         <div class="grid-wrap">
-          ${renderMatchupGrid('away', away, home.pitcher || syntheticLeagueAvgPitcher())}
-          ${renderMatchupGrid('home', home, away.pitcher || syntheticLeagueAvgPitcher())}
+          ${renderMatchupGrid('away', away, home.pitcher || syntheticLeagueAvgPitcher(), home.side.teamAbbrev)}
+          ${renderMatchupGrid('home', home, away.pitcher || syntheticLeagueAvgPitcher(), home.side.teamAbbrev)}
         </div>
       </details>
     `;
   }
 
-  function renderMatchupGrid(side, sideObj, pitcher) {
+  function renderMatchupGrid(side, sideObj, pitcher, homeTeamAbbrev) {
     const lg = window.MatchupData.league;
     const rows = sideObj.lineup.map((b, i) => {
-      const m = window.MatchupModel.matchup(pitcher, b, lg);
+      const ctx = buildCtx(b, pitcher, homeTeamAbbrev);
+      const m = window.MatchupModel.matchup(pitcher, b, lg, ctx);
       if (!m) return `<tr><td>${i + 1}</td><td>${escHTML(b.name)}</td><td colspan="4">—</td></tr>`;
       return `<tr>
         <td>${i + 1}</td>
@@ -184,13 +232,18 @@
     const homeP = home.pitcher || syntheticLeagueAvgPitcher();
     const awayP = away.pitcher || syntheticLeagueAvgPitcher();
 
+    const homeBullpen = _bullpenByTeam[home.side.teamAbbrev] || null;
+    const awayBullpen = _bullpenByTeam[away.side.teamAbbrev] || null;
+    const homeTeamAbbrev = home.side.teamAbbrev;
+    const ctxFn = (b, pit) => buildCtx(b, pit, homeTeamAbbrev);
+
     let result;
     try {
       result = window.WinProbSimulator.simulateGame(
-        { pitcher: homeP, lineup: home.lineup },
-        { pitcher: awayP, lineup: away.lineup },
+        { pitcher: homeP, lineup: home.lineup, bullpen: homeBullpen },
+        { pitcher: awayP, lineup: away.lineup, bullpen: awayBullpen },
         lg,
-        { sims: 2000, starterInnings: 6 }
+        { sims: 2000, starterInnings: 6, ctxFn }
       );
     } catch (e) {
       console.error('[sim]', g.gamePk, e);
