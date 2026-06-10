@@ -268,11 +268,177 @@
       + `home=${(wHome*100).toFixed(1)}% mean=${result.meanRuns.home.toFixed(2)}-${result.meanRuns.away.toFixed(2)} in ${dt}ms`);
   }
 
+  // ─── Single-matchup mode ───
+  let _mPitcher = null, _mBatter = null;
+
+  function highlight(text, query) {
+    if (!query) return escHTML(text);
+    const tn = (text || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    const qn = String(query).toLowerCase();
+    const i = tn.indexOf(qn);
+    if (i < 0) return escHTML(text);
+    return escHTML(text.slice(0, i))
+      + '<mark>' + escHTML(text.slice(i, i + qn.length)) + '</mark>'
+      + escHTML(text.slice(i + qn.length));
+  }
+
+  function setupSingleMatchup() {
+    const pitchers = window.MatchupData.pitchers
+      .slice().sort((a, b) => (b.ip || 0) - (a.ip || 0));
+    const batters = window.MatchupData.batters
+      .slice().sort((a, b) => (b.pa || 0) - (a.pa || 0));
+
+    window.Typeahead.attach({
+      inputEl: $('m-pitcher-input'),
+      items: pitchers,
+      renderRow: (p, q) => `
+        <div class="ta-row-name">${highlight(p.name, q)}</div>
+        <div class="ta-row-meta">
+          <span class="ta-team">${escHTML(p.team || '?')}</span>
+          <span class="ta-hand">${escHTML(p.throws || '?')}HP</span>
+          ${p.ip != null ? `<span class="ta-stat">${p.ip.toFixed(1)} IP</span>` : ''}
+          ${p.k_pct != null ? `<span class="ta-stat">${pctNum(p.k_pct).toFixed(1)} K%</span>` : ''}
+          ${p.stuff_plus != null ? `<span class="ta-stat">Stuff+ ${p.stuff_plus.toFixed(0)}</span>` : ''}
+        </div>`,
+      onSelect: (p) => { _mPitcher = p; renderSingleMatchup(); },
+    });
+
+    window.Typeahead.attach({
+      inputEl: $('m-batter-input'),
+      items: batters,
+      renderRow: (b, q) => `
+        <div class="ta-row-name">${highlight(b.name, q)}</div>
+        <div class="ta-row-meta">
+          <span class="ta-team">${escHTML(b.team || '?')}</span>
+          <span class="ta-hand">${escHTML(b.bats || '?')}HB</span>
+          ${b.pa != null ? `<span class="ta-stat">${b.pa.toFixed(0)} PA</span>` : ''}
+          ${b.wrc_plus != null ? `<span class="ta-stat">wRC+ ${b.wrc_plus.toFixed(0)}</span>` : ''}
+          ${b.woba != null ? `<span class="ta-stat">${b.woba.toFixed(3)} wOBA</span>` : ''}
+        </div>`,
+      onSelect: (b) => { _mBatter = b; renderSingleMatchup(); },
+    });
+  }
+
+  function pctNum(v) { return v == null ? 0 : (v > 1 ? v : v * 100); }
+  function pctTxt(v, d) { return v == null ? '—' : pctNum(v).toFixed(d ?? 1) + '%'; }
+
+  function renderSingleMatchup() {
+    const out = $('m-result');
+    const p = _mPitcher, b = _mBatter;
+    if (!p || !b) {
+      out.innerHTML = '<div class="hint">Search for a pitcher and a batter to see the matchup.</div>';
+      return;
+    }
+    const lg = window.MatchupData.league;
+    const D = window.MatchupData;
+    const ctx = {
+      bat_split:    D.bat_splits[b.id],
+      pit_split:    D.pit_splits[p.id],
+      bat_whiff:    D.bat_whiff[b.id],
+      pit_arsenal:  D.pit_arsenal[p.id],
+      park_factors: D.park_factors,
+      home_team:    p.team || null,
+      bat_recent:   D.bat_recent[b.id],
+      pit_recent:   D.pit_recent[p.id],
+      h2h:          D.h2h[p.id + '|' + b.id],
+    };
+    const m = window.MatchupModel.matchup(p, b, lg, ctx);
+    if (!m) {
+      out.innerHTML = '<div class="hint err">Could not compute matchup (missing fields).</div>';
+      return;
+    }
+    out.innerHTML = `
+      <div class="matchup-head">
+        <div class="head-p">
+          <div class="head-name">${escHTML(p.name)}</div>
+          <div class="head-meta">${escHTML(p.team || '?')} · ${escHTML(p.throws || '?')}HP${p.ip ? ' · ' + p.ip.toFixed(1) + ' IP' : ''}</div>
+          <div class="head-marks">
+            ${p.stuff_plus != null ? `<span class="mk">Stuff+ <b>${p.stuff_plus.toFixed(0)}</b></span>` : ''}
+            ${p.location_plus != null ? `<span class="mk">Loc+ <b>${p.location_plus.toFixed(0)}</b></span>` : ''}
+            ${p.era != null ? `<span class="mk">ERA <b>${p.era.toFixed(2)}</b></span>` : ''}
+            ${p.k_pct != null ? `<span class="mk">K% <b>${pctNum(p.k_pct).toFixed(1)}</b></span>` : ''}
+          </div>
+        </div>
+        <div class="head-vs">VS</div>
+        <div class="head-b">
+          <div class="head-name">${escHTML(b.name)}</div>
+          <div class="head-meta">${escHTML(b.team || '?')} · ${escHTML(b.bats || '?')}HB${b.pa ? ' · ' + b.pa.toFixed(0) + ' PA' : ''}</div>
+          <div class="head-marks">
+            ${b.wrc_plus != null ? `<span class="mk">wRC+ <b>${b.wrc_plus.toFixed(0)}</b></span>` : ''}
+            ${b.woba != null ? `<span class="mk">wOBA <b>${b.woba.toFixed(3)}</b></span>` : ''}
+            ${b.k_pct != null ? `<span class="mk">K% <b>${pctNum(b.k_pct).toFixed(1)}</b></span>` : ''}
+            ${b.bb_pct != null ? `<span class="mk">BB% <b>${pctNum(b.bb_pct).toFixed(1)}</b></span>` : ''}
+          </div>
+        </div>
+      </div>
+      ${edgeBar(m.edge)}
+      <div class="grid">
+        <div class="card">
+          <div class="card-h">Predicted PA outcome</div>
+          <table class="pa-table">
+            <tr><td>Strikeout</td><td>${pctTxt(m.p.K)}</td></tr>
+            <tr><td>Walk</td><td>${pctTxt(m.p.BB)}</td></tr>
+            <tr><td>Single</td><td>${pctTxt(m.p.single)}</td></tr>
+            <tr><td>Double</td><td>${pctTxt(m.p.double)}</td></tr>
+            <tr><td>Triple</td><td>${pctTxt(m.p.triple, 2)}</td></tr>
+            <tr><td>Home run</td><td>${pctTxt(m.p.HR)}</td></tr>
+            <tr><td>HBP</td><td>${pctTxt(m.p.HBP, 2)}</td></tr>
+            <tr><td>Out in play</td><td>${pctTxt(m.p.out_in_play)}</td></tr>
+          </table>
+        </div>
+        <div class="card">
+          <div class="card-h">Summary</div>
+          <table class="pa-table">
+            <tr><td>Expected wOBA</td><td><b>${m.xwOBA.toFixed(3)}</b></td></tr>
+            <tr><td>League avg wOBA</td><td>${m.lgWOBA.toFixed(3)}</td></tr>
+            <tr><td>Edge (− pit / + bat)</td><td><b>${m.edge > 0 ? '+' : ''}${m.edge.toFixed(0)}</b></td></tr>
+          </table>
+        </div>
+        <div class="card">
+          <div class="card-h">Why</div>
+          ${m.reasons.length === 0
+            ? '<div class="hint">Average matchup — no major edges.</div>'
+            : m.reasons.map(r => `<div class="reason reason-${r.favors}">
+                <span class="reason-lbl">${escHTML(r.label)}</span>
+                <span class="reason-detail">${escHTML(r.detail)}</span>
+                <span class="reason-tag">→ ${escHTML(r.favors)}</span>
+              </div>`).join('')}
+        </div>
+      </div>`;
+  }
+
+  function edgeBar(edge) {
+    const pct = ((edge + 100) / 2);
+    const dir = edge < -10 ? 'pitcher' : (edge > 10 ? 'hitter' : 'neutral');
+    return `<div class="edge-bar" aria-label="Edge ${edge.toFixed(0)}">
+      <div class="edge-bar-fill edge-${dir}" style="width:${pct}%"></div>
+      <div class="edge-bar-center"></div>
+      <div class="edge-label">${edge > 0 ? '+' : ''}${edge.toFixed(0)} ${dir.toUpperCase()}</div>
+    </div>`;
+  }
+
+  function setupModeTabs() {
+    const tabs = document.querySelectorAll('.mode-tab');
+    tabs.forEach((t) => {
+      t.addEventListener('click', () => {
+        tabs.forEach((x) => { x.classList.remove('active'); x.setAttribute('aria-selected', 'false'); });
+        t.classList.add('active');
+        t.setAttribute('aria-selected', 'true');
+        const mode = t.dataset.mode;
+        document.querySelectorAll('.mode-section').forEach((s) => {
+          const on = s.id === 'mode-' + mode;
+          s.classList.toggle('active', on);
+          s.hidden = !on;
+        });
+      });
+    });
+  }
+
   // ─── Boot ───
   document.addEventListener('DOMContentLoaded', () => {
     const meta = $('meta-line');
     window.MatchupData.ready.then(() => {
-      if (!window.MatchupData.league || !window.MatchupData.today) {
+      if (!window.MatchupData.league) {
         $('slate').innerHTML = `<div class="hint err">Data not available. Run
           <code>node scripts/fetch-data.js</code> or wait for the daily refresh.</div>`;
         return;
@@ -280,10 +446,21 @@
       buildIndexes();
       const m = window.MatchupData.meta;
       if (meta && m) {
-        meta.textContent = `Season ${m.season} · ${m.counts.games || 0} games today · `
-          + `data fetched ${new Date(m.fetchedAt).toLocaleString()}`;
+        const D = window.MatchupData;
+        meta.textContent = `Season ${m.season} · ${(m.counts && m.counts.games) || (D.today && D.today.games ? D.today.games.length : 0)} games today · `
+          + `${D.pitchers.length} pitchers · ${D.batters.length} batters · `
+          + `fetched ${new Date(m.fetchedAt).toLocaleString()}`;
       }
-      renderSlate();
+      if (window.MatchupData.today) {
+        renderSlate();
+      } else {
+        $('slate').innerHTML = '<div class="hint">No schedule data — single matchup + predicted runs are still available.</div>';
+      }
+      setupSingleMatchup();
+      if (window.RunsPredictorUI) {
+        window.RunsPredictorUI.init(window.MatchupData.pitchers, window.MatchupData.batters);
+      }
+      setupModeTabs();
     });
   });
 })();

@@ -162,6 +162,70 @@ def compute_arsenal(pitches):
     return out
 
 
+def compute_recent(pa, days_back=30):
+    """Per-player rates over the most recent N days of data — used to
+    blend lightly with seasonal stats in the matchup model."""
+    if pa.empty or 'game_date' not in pa.columns:
+        return {'bat': {}, 'pit': {}}
+    max_date = pd.to_datetime(pa['game_date']).max()
+    cutoff = max_date - pd.Timedelta(days=days_back)
+    recent_pa = pa[pd.to_datetime(pa['game_date']) >= cutoff]
+
+    LIN = {'BB': 0.690, 'HBP': 0.720, 'single': 0.890,
+           'double': 1.271, 'triple': 1.616, 'HR': 2.101}
+
+    bat = {}
+    for bid, g in recent_pa.groupby('batter'):
+        n = len(g)
+        if n < 15: continue   # require ≥15 PA in window
+        c = {e: int((g['outcome'] == e).sum()) for e in
+             ['K','BB','HBP','HR','triple','double','single','out_in_play']}
+        woba = sum(LIN[e] * c[e] for e in LIN) / n
+        h = c['single'] + c['double'] + c['triple'] + c['HR']
+        bat[int(bid)] = {
+            'pa': n, 'window_days': days_back,
+            'k_pct': round(c['K']/n, 4),
+            'bb_pct': round(c['BB']/n, 4),
+            'hr_per_pa': round(c['HR']/n, 4),
+            'woba': round(woba, 4),
+            'avg': round(h/(n - c['BB'] - c['HBP']), 4) if (n - c['BB'] - c['HBP']) > 0 else None,
+        }
+
+    pit = {}
+    for pid, g in recent_pa.groupby('pitcher'):
+        n = len(g)
+        if n < 15: continue
+        c = {e: int((g['outcome'] == e).sum()) for e in
+             ['K','BB','HBP','HR','triple','double','single','out_in_play']}
+        pit[int(pid)] = {
+            'pa': n, 'window_days': days_back,
+            'k_pct': round(c['K']/n, 4),
+            'bb_pct': round(c['BB']/n, 4),
+            'hr_per_pa': round(c['HR']/n, 4),
+        }
+    return {'bat': bat, 'pit': pit}
+
+
+def compute_h2h(pa, min_pa=10):
+    """Pitcher-vs-batter head-to-head outcome counts over the loaded window.
+    Stored only when ≥ min_pa total PAs — anything less is too noisy to use."""
+    out = {}
+    g = pa.groupby(['pitcher', 'batter'])
+    for (pid, bid), grp in g:
+        n = len(grp)
+        if n < min_pa: continue
+        c = {e: int((grp['outcome'] == e).sum()) for e in
+             ['K','BB','HBP','HR','triple','double','single','out_in_play']}
+        key = f'{int(pid)}|{int(bid)}'
+        out[key] = {
+            'pa': n,
+            'k_pct': round(c['K']/n, 4),
+            'bb_pct': round(c['BB']/n, 4),
+            'hr_per_pa': round(c['HR']/n, 4),
+        }
+    return out
+
+
 def mlb_people_lookup(ids):
     """Resolve {mlbam_id: {fullName, bats, throwHand}} via MLB Stats API.
     Free + unauthenticated; accepts up to ~1000 IDs at a time."""
@@ -431,16 +495,49 @@ def main():
     pit_splits  = compute_splits(pa, 'pitcher', 'stand')
     bat_whiff   = compute_whiff(sc)
     pit_arsenal = compute_arsenal(sc)
+    recent      = compute_recent(pa, days_back=30)
+
+    # ─── H2H accumulation across multi-year window ───
+    # Pitcher-batter pairs almost never reach 10 PA inside a single in-season
+    # window. Pull the prior two seasons of PA outcomes and combine with the
+    # current-season pa so the ≥10-PA threshold actually fires for ~most
+    # active starter-vs-regular-batter pairs.
+    h2h_years_back = int(os.environ.get('H2H_YEARS_BACK', '2'))
+    h2h_pa = pa[['pitcher', 'batter', 'outcome']].copy()
+    h2h_seasons = [SEASON]
+    for yr in range(SEASON - 1, SEASON - 1 - h2h_years_back, -1):
+        try:
+            print(f'  pulling Statcast {yr} for H2H accumulation (cached after first run)...')
+            t_yr = time.time()
+            sc_yr = statcast(start_dt=f'{yr}-03-20', end_dt=f'{yr}-10-05')
+            if sc_yr is None or sc_yr.empty:
+                print(f'    {yr}: empty pull (likely Statcast outage); skipping')
+                continue
+            pa_yr = to_pa_outcomes(sc_yr)
+            h2h_pa = pd.concat([h2h_pa, pa_yr[['pitcher', 'batter', 'outcome']]],
+                                ignore_index=True)
+            h2h_seasons.append(yr)
+            print(f'    {yr}: +{len(pa_yr):,} PAs ({time.time() - t_yr:.0f}s)')
+        except Exception as e:
+            print(f'    {yr}: failed ({e}); skipping')
+    h2h = compute_h2h(h2h_pa, min_pa=10)
+    print(f'  h2h built from seasons {sorted(h2h_seasons)} '
+          f'({len(h2h_pa):,} total PAs)')
 
     print(f'  batters={len(batters)} pitchers={len(pitchers)} '
           f'bat_splits={len(bat_splits)} pit_splits={len(pit_splits)} '
           f'bat_whiff={len(bat_whiff)} pit_arsenal={len(pit_arsenal)}')
+    print(f'  recent: bat={len(recent["bat"])} pit={len(recent["pit"])}, '
+          f'h2h pairs (≥10 PA): {len(h2h)}')
 
     (DATA / 'batters.json').write_text(json.dumps(batters))
     (DATA / 'pitchers.json').write_text(json.dumps(pitchers))
     (DATA / 'league.json').write_text(json.dumps(league))
     (DATA / 'bat_splits.json').write_text(json.dumps(bat_splits))
     (DATA / 'pit_splits.json').write_text(json.dumps(pit_splits))
+    (DATA / 'bat_recent.json').write_text(json.dumps(recent['bat']))
+    (DATA / 'pit_recent.json').write_text(json.dumps(recent['pit']))
+    (DATA / 'h2h.json').write_text(json.dumps(h2h))
     (DATA / 'bat_whiff.json').write_text(json.dumps(bat_whiff))
     (DATA / 'pit_arsenal.json').write_text(json.dumps(pit_arsenal))
     (DATA / 'park_factors.json').write_text(json.dumps(PARK_FACTORS))

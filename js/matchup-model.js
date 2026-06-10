@@ -90,6 +90,32 @@
     return { r: pf.r / 100, hr: pf.hr / 100 };
   }
 
+  // ── Recent-form blend ──
+  // Light blend with last-30d rates. The blend WEIGHT depends on the recent-
+  // window sample size — small samples are mostly noise and get little
+  // weight. Capped at 0.25 even when last-30d has plenty of PAs.
+  //   sample_weight = pa_recent / (pa_recent + 90)    → roughly 50/50 at 90 PA
+  //   final_weight  = min(0.25, sample_weight)
+  function recentBlend(seasonRate, recent, key) {
+    if (!recent || recent.pa < 15 || recent[key] == null || seasonRate == null) return seasonRate;
+    const w = Math.min(0.25, recent.pa / (recent.pa + 90));
+    return (1 - w) * seasonRate + w * recent[key];
+  }
+
+  // ── H2H tilt (very conservative) ──
+  // Pitcher-batter head-to-head data is well known to be mostly noise. Apply
+  // ONLY a small directional bump on K%/BB%/HR%, scaled by sqrt(N) of the
+  // H2H sample, capped at ±3% on K% and ±2% on HR/PA. Anything < 10 PA is
+  // ignored. This adds flavor without overriding the structural model.
+  function h2hTilt(seasonRate, h2hRate, h2hPA, maxDelta) {
+    if (!h2hRate || !h2hPA || h2hPA < 10 || seasonRate == null) return seasonRate;
+    const raw = h2hRate - seasonRate;
+    // shrink toward 0 — full credit only when N is huge
+    const shrink = Math.min(1.0, h2hPA / 60);   // half-credit at 30 PA, full at 60
+    const delta = Math.max(-maxDelta, Math.min(maxDelta, raw * shrink));
+    return Math.max(0, Math.min(1, seasonRate + delta));
+  }
+
   // ── core matchup ──
   function matchup(pit, bat, league, ctx) {
     if (!pit || !bat || !league) return null;
@@ -138,9 +164,26 @@
     pHR = regress(pHR, pitPA, lHR, SHRINK.hr_per_pa);
     pBABIP = regress(pBABIP, pitPA, lBABIP, SHRINK.babip);
 
+    // Light recent-form blend (≤25% weight)
+    const batRecent = ctx.bat_recent, pitRecent = ctx.pit_recent;
+    bK  = recentBlend(bK,  batRecent, 'k_pct');
+    bBB = recentBlend(bBB, batRecent, 'bb_pct');
+    bHR = recentBlend(bHR, batRecent, 'hr_per_pa');
+    pK  = recentBlend(pK,  pitRecent, 'k_pct');
+    pBB = recentBlend(pBB, pitRecent, 'bb_pct');
+    pHR = recentBlend(pHR, pitRecent, 'hr_per_pa');
+
     let pK_pred  = log5(bK, pK, lK);
     let pBB_pred = log5(bBB, pBB, lBB);
     let pHR_pred = log5(bHR, pHR, lHR);
+
+    // H2H tilt (post log5; tiny adjustments only)
+    const h2h = ctx.h2h;
+    if (h2h && h2h.pa) {
+      pK_pred  = h2hTilt(pK_pred,  h2h.k_pct,     h2h.pa, 0.03);
+      pBB_pred = h2hTilt(pBB_pred, h2h.bb_pct,    h2h.pa, 0.02);
+      pHR_pred = h2hTilt(pHR_pred, h2h.hr_per_pa, h2h.pa, 0.02);
+    }
 
     if (!useSplits) {
       const plat = platoonFactors(bBats, pThrows);
@@ -192,12 +235,13 @@
         park_hr: park.hr,
         whiff_signal: whiffSig,
       },
-      reasons: buildReasons(pit, bat, useSplits, park, whiffSig),
+      reasons: buildReasons(pit, bat, useSplits, park, whiffSig, ctx),
     };
   }
 
-  function buildReasons(pit, bat, useSplits, park, whiffSig) {
+  function buildReasons(pit, bat, useSplits, park, whiffSig, ctx) {
     const r = [];
+    ctx = ctx || {};
     if (pit.stuff_plus != null) {
       const d = pit.stuff_plus - 100;
       if (Math.abs(d) >= 5) r.push({
@@ -244,6 +288,38 @@
         label: `wRC+ ${bat.wrc_plus.toFixed(0)}`,
         favors: d > 0 ? 'hitter' : 'pitcher',
         detail: `${Math.abs(d).toFixed(0)}pt ${d > 0 ? 'above' : 'below'} avg`,
+      });
+    }
+    // Recent form (only flag when significantly hot/cold)
+    const br = ctx.bat_recent;
+    if (br && br.pa >= 30 && br.woba != null && bat.woba != null) {
+      const d = br.woba - bat.woba;
+      if (Math.abs(d) >= 0.030) {
+        r.push({
+          label: `${bat.name} last ${br.window_days || 30}d`,
+          favors: d > 0 ? 'hitter' : 'pitcher',
+          detail: `${br.pa} PA, wOBA ${br.woba.toFixed(3)} vs ${bat.woba.toFixed(3)} season`,
+        });
+      }
+    }
+    const pr = ctx.pit_recent;
+    if (pr && pr.pa >= 30 && pr.k_pct != null && pit.k_pct != null) {
+      const seasonK = pit.k_pct > 1 ? pit.k_pct / 100 : pit.k_pct;
+      const d = pr.k_pct - seasonK;
+      if (Math.abs(d) >= 0.04) {
+        r.push({
+          label: `${pit.name} last 30d`,
+          favors: d > 0 ? 'pitcher' : 'hitter',
+          detail: `${pr.pa} BF, K% ${(pr.k_pct*100).toFixed(1)} vs ${(seasonK*100).toFixed(1)} season`,
+        });
+      }
+    }
+    // H2H (only mention when sample is non-trivial)
+    if (ctx.h2h && ctx.h2h.pa >= 15) {
+      r.push({
+        label: `Career H2H — ${ctx.h2h.pa} PA`,
+        favors: 'data',
+        detail: `K% ${(ctx.h2h.k_pct*100).toFixed(0)}, BB% ${(ctx.h2h.bb_pct*100).toFixed(0)}, HR ${(ctx.h2h.hr_per_pa*100).toFixed(1)}% (lightly weighted)`,
       });
     }
     return r;

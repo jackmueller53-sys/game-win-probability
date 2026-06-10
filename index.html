@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="description" content="Game win-probability predictor: pulls today's MLB lineups + probable starters, runs Monte Carlo PA-by-PA simulation using the matchup model.">
+<meta name="description" content="Win Probability + Pitcher-Batter Matchup + Predicted Runs — Monte Carlo simulation using the shared matchup model.">
 <meta name="color-scheme" content="light dark">
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'self';
@@ -16,7 +16,7 @@
   base-uri 'self';
   form-action 'none';
 ">
-<title>Win Probability — MLB Slate</title>
+<title>Win Probability — MLB Slate + Matchup Analyzer</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="preload" as="fetch" href="data/today.json" type="application/json" crossorigin="anonymous">
@@ -27,25 +27,79 @@
 <script src="js/matchup-model.js" defer></script>
 <script src="js/simulator.js" defer></script>
 <script src="js/data-loader.js" defer></script>
+<script src="js/typeahead.js" defer></script>
+<script src="js/runs-predictor.js" defer></script>
 <script src="js/ui.js" defer></script>
 </head>
 <body>
   <header class="hdr">
     <div class="hdr-inner">
       <h1>Win Probability</h1>
-      <span class="hdr-sub">Monte Carlo simulation · 2000 games per matchup</span>
+      <span class="hdr-sub">Slate · Single matchup · Team-vs-pitcher runs</span>
       <span class="meta-line" id="meta-line"></span>
     </div>
   </header>
 
-  <main id="slate">
-    <div class="hint">Loading slate&hellip;</div>
-  </main>
+  <nav class="mode-tabs" role="tablist" aria-label="Mode">
+    <button class="mode-tab active" role="tab" aria-selected="true" data-mode="slate">Today's slate</button>
+    <button class="mode-tab" role="tab" aria-selected="false" data-mode="matchup">Single matchup</button>
+    <button class="mode-tab" role="tab" aria-selected="false" data-mode="runs">Predicted runs</button>
+  </nav>
+
+  <section id="mode-slate" class="mode-section active">
+    <main id="slate">
+      <div class="hint">Loading slate&hellip;</div>
+    </main>
+  </section>
+
+  <section id="mode-matchup" class="mode-section" hidden>
+    <div class="mode-body">
+      <div class="picker">
+        <div class="picker-card">
+          <label class="lbl" for="m-pitcher-input">Pitcher</label>
+          <div class="ta-wrap">
+            <input id="m-pitcher-input" type="text" placeholder="Type a pitcher's name&hellip;">
+          </div>
+        </div>
+        <div class="picker-card">
+          <label class="lbl" for="m-batter-input">Batter</label>
+          <div class="ta-wrap">
+            <input id="m-batter-input" type="text" placeholder="Type a batter's name&hellip;">
+          </div>
+        </div>
+      </div>
+      <section id="m-result" class="result">
+        <div class="hint">Search for a pitcher and a batter to see the matchup.</div>
+      </section>
+    </div>
+  </section>
+
+  <section id="mode-runs" class="mode-section" hidden>
+    <div class="mode-body">
+      <div class="picker">
+        <div class="picker-card">
+          <label class="lbl" for="runs-team-input">Hitting team</label>
+          <div class="ta-wrap">
+            <input id="runs-team-input" type="text" placeholder="Type a team name or abbr&hellip;">
+          </div>
+        </div>
+        <div class="picker-card">
+          <label class="lbl" for="runs-pitcher-input">Pitcher</label>
+          <div class="ta-wrap">
+            <input id="runs-pitcher-input" type="text" placeholder="Type a pitcher's name&hellip;">
+          </div>
+        </div>
+      </div>
+      <div id="runs-result" class="result">
+        <div class="hint">Pick a team and a pitcher to project expected runs.</div>
+      </div>
+    </div>
+  </section>
 
   <footer class="ftr">
     <div class="ftr-inner">
-      <span>Data: FanGraphs + MLB Stats API (schedule, probable pitchers, lineups when posted)</span>
-      <span>Model: per-PA log5 matchup → 2k-iteration MC sim</span>
+      <span>Data: FanGraphs + Statcast + MLB Stats API</span>
+      <span>Model: per-PA log5 matchup → 2k-iteration MC sim · recent-form ≤25% · H2H ±3%</span>
       <span><a href="https://github.com/jackmueller53-sys/game-win-probability" rel="noopener noreferrer">source</a></span>
     </div>
   </footer>

@@ -1,7 +1,5 @@
-/* Loads JSON files written by scripts/fetch-data.js + scripts/build_features.py.
-   Exposes window.MatchupData = { pitchers, batters, league, meta,
-                                  bat_splits, pit_splits, bat_whiff,
-                                  pit_arsenal, park_factors, ready }. */
+/* Unified data loader for the WP site.
+   Loads schedule (today.json) + matchup-model features in parallel. */
 (function () {
   'use strict';
 
@@ -9,6 +7,7 @@
     pitchers: [], batters: [], league: null, meta: null, today: null,
     bat_splits: {}, pit_splits: {}, bat_whiff: {},
     pit_arsenal: {}, park_factors: {},
+    bat_recent: {}, pit_recent: {}, h2h: {},
     ready: null,
   };
 
@@ -29,7 +28,10 @@
     load('data/bat_whiff.json',     {}),
     load('data/pit_arsenal.json',   {}),
     load('data/park_factors.json',  {}),
-  ]).then(([p, b, l, m, t, bs, ps, bw, pa, pf]) => {
+    load('data/bat_recent.json',    {}),
+    load('data/pit_recent.json',    {}),
+    load('data/h2h.json',           {}),
+  ]).then(([p, b, l, m, t, bs, ps, bw, pa, pf, br, pr, h2h]) => {
     out.pitchers = Array.isArray(p) ? p : [];
     out.batters  = Array.isArray(b) ? b : [];
     out.league   = l;
@@ -40,6 +42,9 @@
     out.bat_whiff    = bw || {};
     out.pit_arsenal  = pa || {};
     out.park_factors = pf || {};
+    out.bat_recent   = br || {};
+    out.pit_recent   = pr || {};
+    out.h2h          = h2h || {};
     return out;
   });
 
