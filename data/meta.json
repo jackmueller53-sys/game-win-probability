@@ -1,5 +1,5 @@
 {
-  "fetchedAt": "2026-08-07T08:59:05.336Z",
+  "fetchedAt": "2026-08-07T14:50:27.063Z",
   "season": 2026,
   "date": "2026-08-07",
   "counts": {
@@ -13,5 +13,5 @@
     "pit: HTTP 403 https://www.fangraphs.com/api/leaders/major-league/data?pos=all&stats=pit&lg=all&qual=20&type=8&seas (proxies also failed)",
     "stuffplus: HTTP 403 https://www.fangraphs.com/api/leaders/major-league/data?pos=all&stats=pit&lg=all&qual=0&type=36&seas (proxies also failed)"
   ],
-  "durationMs": 39457
+  "durationMs": 69550
 }
