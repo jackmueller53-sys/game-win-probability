@@ -1,11 +1,11 @@
 {
-  "fetchedAt": "2026-08-06T10:38:23.410Z",
+  "fetchedAt": "2026-08-07T08:59:05.336Z",
   "season": 2026,
-  "date": "2026-08-06",
+  "date": "2026-08-07",
   "counts": {
     "batters": 0,
     "pitchers": 0,
-    "games": 11,
+    "games": 15,
     "stuffplus": 0
   },
   "errors": [
@@ -13,5 +13,5 @@
     "pit: HTTP 403 https://www.fangraphs.com/api/leaders/major-league/data?pos=all&stats=pit&lg=all&qual=20&type=8&seas (proxies also failed)",
     "stuffplus: HTTP 403 https://www.fangraphs.com/api/leaders/major-league/data?pos=all&stats=pit&lg=all&qual=0&type=36&seas (proxies also failed)"
   ],
-  "durationMs": 55045
+  "durationMs": 39457
 }
