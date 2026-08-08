@@ -22,24 +22,21 @@ const DATA_DIR = path.join(__dirname, '..', 'data');
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
 // ─────────────────────────── http ───────────────────────────
-// FanGraphs is behind Cloudflare; from CI we frequently get 403'd.
-// Use real-Chrome headers + a CORS-proxy fallback chain on 4xx.
-
+// FanGraphs is behind Cloudflare. It 403s requests that CLAIM to be a browser
+// (Chrome UA + Sec-Ch-Ua hints) but have a Node/curl TLS fingerprint — the
+// mismatch is the tell. Verified (2026-08): a plain/branded UA gets 200, a
+// fake Chrome UA gets 403. So do NOT impersonate a browser. Plus a CORS-proxy
+// fallback chain on 4xx. (Same fix as the baseball-hub repo.)
 const BROWSER_HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-  'Accept': 'application/json, text/plain, */*',
-  'Accept-Language': 'en-US,en;q=0.9',
+  'User-Agent': 'game-win-probability/1.0 (+https://github.com/jackmueller53-sys/game-win-probability)',
+  'Accept': 'application/json, text/csv, text/plain, */*',
   'Accept-Encoding': 'identity',
-  'Sec-Ch-Ua': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
-  'Sec-Ch-Ua-Mobile': '?0',
-  'Sec-Ch-Ua-Platform': '"macOS"',
-  'Sec-Fetch-Dest': 'empty',
-  'Sec-Fetch-Mode': 'cors',
-  'Sec-Fetch-Site': 'same-site',
 };
 const PROXIES = [
   (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
   (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+  (u) => `https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(u)}`,
+  (u) => `https://thingproxy.freeboard.io/fetch/${u}`,
 ];
 
 function directFetch(url, maxRedirects = 5) {
