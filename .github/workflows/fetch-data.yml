@@ -28,6 +28,9 @@ jobs:
       - name: Build Statcast-derived stats + features
         run: python3 scripts/build_features.py
         continue-on-error: false  # build_features is now the primary data source
+      - name: Track model prediction accuracy (grade + lock slate)
+        run: node scripts/track-accuracy.js
+        continue-on-error: true   # never block the data commit on the tracker
       - name: Check for changes
         id: check
         run: |

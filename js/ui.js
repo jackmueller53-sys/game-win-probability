@@ -435,6 +435,35 @@
   }
 
   // ─── Boot ───
+  // ─── Model accuracy banner (data/prediction-log.json) ───
+  // season = rough backfill (in-sample); tracked = live out-of-sample W-L.
+  function renderAccuracyBanner() {
+    const el = $('accuracy-banner');
+    if (!el) return;
+    fetch('data/prediction-log.json', { cache: 'no-cache' })
+      .then(r => r.ok ? r.json() : null)
+      .then(log => {
+        if (!log) return;
+        const s = log.season, t = log.tracked || {};
+        const tN = (t.wins || 0) + (t.losses || 0);
+        const pctTxt = (v) => v == null ? '—' : (v * 100).toFixed(1) + '%';
+        const seasonHtml = s && s.games
+          ? `<span class="acc-item"><span class="acc-val">${pctTxt(s.pct)}</span>`
+            + `<span class="acc-lbl">Season winner accuracy <em>· rough, ${s.games.toLocaleString()} games</em></span></span>`
+          : '';
+        const startTxt = t.startDate ? new Date(t.startDate + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '';
+        const trackedHtml = `<span class="acc-item"><span class="acc-val">`
+          + (tN ? `${t.wins}–${t.losses} <span class="acc-sub">${pctTxt(t.pct)}</span>` : 'tracking…')
+          + `</span><span class="acc-lbl">Live record <em>· since ${startTxt}${log.pending && log.pending.length ? ' · ' + log.pending.length + ' pending today' : ''}</em></span></span>`;
+        el.innerHTML = `<div class="acc-title">Model accuracy — predicting the game winner</div>`
+          + `<div class="acc-row">${seasonHtml}${trackedHtml}</div>`
+          + `<div class="acc-foot">Season figure scores past games with current stats (mild hindsight — a rough baseline). `
+          + `The live record is locked pre-game and graded on final scores — the true track record. Results via MLB.com.</div>`;
+        el.hidden = false;
+      })
+      .catch(() => { /* no banner if the log isn't published yet */ });
+  }
+
   document.addEventListener('DOMContentLoaded', () => {
     const meta = $('meta-line');
     window.MatchupData.ready.then(() => {
@@ -456,6 +485,7 @@
       } else {
         $('slate').innerHTML = '<div class="hint">No schedule data — single matchup + predicted runs are still available.</div>';
       }
+      renderAccuracyBanner();
       setupSingleMatchup();
       if (window.RunsPredictorUI) {
         window.RunsPredictorUI.init(window.MatchupData.pitchers, window.MatchupData.batters);

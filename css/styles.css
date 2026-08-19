@@ -343,3 +343,27 @@ body { margin: 0; background: var(--bg); color: var(--fg);
   .head-b .head-marks { justify-content: flex-start; }
   .head-vs { display: none; }
 }
+
+/* ── Model accuracy banner ─────────────────────────────────────────────── */
+#accuracy-banner {
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px 18px;
+  margin: 0 0 16px;
+}
+.acc-title {
+  font-family: 'Barlow Condensed', system-ui, sans-serif;
+  font-size: 12px; letter-spacing: 1.2px; text-transform: uppercase;
+  color: var(--fg3); font-weight: 700; margin-bottom: 10px;
+}
+.acc-row { display: flex; flex-wrap: wrap; gap: 28px; }
+.acc-item { display: flex; flex-direction: column; gap: 2px; }
+.acc-val {
+  font-family: 'Barlow Condensed', system-ui, sans-serif;
+  font-size: 30px; font-weight: 800; line-height: 1; color: var(--fg);
+}
+.acc-val .acc-sub { font-size: 18px; font-weight: 700; color: var(--fg2); margin-left: 4px; }
+.acc-lbl { font-size: 12px; color: var(--fg2); }
+.acc-lbl em { color: var(--fg3); font-style: normal; }
+.acc-foot { margin-top: 10px; font-size: 11px; line-height: 1.5; color: var(--fg3); }
