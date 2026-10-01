@@ -1,5 +1,5 @@
 {
-  "fetchedAt": "2026-10-01T15:08:20.509Z",
+  "fetchedAt": "2026-10-01T19:14:29.354Z",
   "season": 2026,
   "date": "2026-10-01",
   "counts": {
@@ -13,5 +13,5 @@
     "pit: bad JSON from https://www.fangraphs.com/api/leaders/major-league/data?pos=all&stats=pit&lg=all&qual=20&type=8&season=2026&season1=2026&ind=0&team=0&pageitems=2000&pagenum=1: <!DOCTYPE html><html lang=\"en-US\"><head><title>Just a moment...</title><meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\"><meta http-equiv=\"X-UA-Compatible\" content=\"IE=Edge\"><meta nam",
     "stuffplus: bad JSON from https://www.fangraphs.com/api/leaders/major-league/data?pos=all&stats=pit&lg=all&qual=0&type=36&season=2026&season1=2026&ind=0&team=0&pageitems=2000&pagenum=1: <!DOCTYPE html><html lang=\"en-US\"><head><title>Just a moment...</title><meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\"><meta http-equiv=\"X-UA-Compatible\" content=\"IE=Edge\"><meta nam"
   ],
-  "durationMs": 46333
+  "durationMs": 59896
 }
